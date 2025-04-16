@@ -165,6 +165,10 @@ export class TurbulenceField {
     this.biasSpeedX = 0;
     this.biasSpeedY = 0;
 
+    // Add Smoothing Rate storage
+    this.smoothingRateIn = 0.1; // Default
+    this.smoothingRateOut = 0.05; // Default
+
     // Add debug mode
     this.debug = debugFlags;
 
@@ -186,6 +190,7 @@ export class TurbulenceField {
   handleParamsUpdate({ simParams }) {
     if (simParams?.turbulence) {
       const turbulenceParams = simParams.turbulence;
+      const prevAffectScale = this.affectScale; // Store previous state
 
       // Update all relevant properties using nullish coalescing
       this.strength = turbulenceParams.strength ?? this.strength;
@@ -226,9 +231,29 @@ export class TurbulenceField {
         this._biasAccelY = turbulenceParams._displayBiasAccelY;
       }
 
+      // --- Add Reset Logic --- 
+      const affectScaleChanged = prevAffectScale !== undefined && prevAffectScale !== this.affectScale;
+
+      if (affectScaleChanged && !this.affectScale) {
+        // affectScale was just turned OFF, reset particle sizes via particleSystem reference
+        // Add safety checks for particleSystem and the method
+        if (this.particleSystem && typeof this.particleSystem.resetParticleRadii === 'function') {
+          this.particleSystem.resetParticleRadii();
+        } else if (this.debug?.turbulence) { // Use optional chaining for debug flag
+          console.warn("TurbulenceField: Cannot call resetParticleRadii() on particleSystem reference.");
+        }
+      }
+      // --- End Reset Logic ---
+
       // Check if dependent values need recalculation after updates
       // For now, let's assume no specific update method is needed beyond what happens in `update` or `applyTurbulence`
       // If issues arise, we might need to add calls like `applyPatternSpecificOffset()` here.
+    }
+
+    // Update smoothing rates
+    if (simParams?.smoothing) {
+      this.smoothingRateIn = simParams.smoothing.rateIn ?? this.smoothingRateIn;
+      this.smoothingRateOut = simParams.smoothing.rateOut ?? this.smoothingRateOut;
     }
     // if(this.debug.turbulences) console.log (`TurbulenceField updated params via event`);
   }
@@ -935,16 +960,6 @@ export class TurbulenceField {
     };
   }
 
-  // Ensure the turbulence field is properly configured to affect particles
-  ensureAffectPosition() {
-    if (!this.affectPosition && Math.abs(this.strength) > 0.001 && this.pullFactor !== 0) {
-      console.warn('TurbulenceField: Auto-enabling affectPosition since strength and pullFactor are non-zero');
-      this.affectPosition = true;
-      return true;
-    }
-    return false;
-  }
-
   applyTurbulence(position, velocity, dt, particleIndex, system) {
     const [x, y] = position;
     const [vx, vy] = velocity;
@@ -964,9 +979,6 @@ export class TurbulenceField {
     }
 
     try {
-      // Auto-enable affectPosition if needed (for better user experience)
-      this.ensureAffectPosition();
-
       // APPLY DIRECTION BIAS FIRST - this should work in either mode
       // Scale direction bias by strength and apply it consistently
       if ((this.directionBias[0] !== 0 || this.directionBias[1] !== 0) && this.affectPosition) {
@@ -1058,13 +1070,26 @@ export class TurbulenceField {
         newVy *= scaleFactorField;
       }
 
-      // Apply particle radius scaling if enabled - works the same in either mode
-      if (this.affectScale && system?.particleRadii) {
-        const n1 = this.noise2D(x, y, this.time, true); // Now uses normalized coordinate processing
-        // Use minScale and maxScale as direct size values, not scaling factors
-        // Ensure the size is at least minScale and at most maxScale
-        const particleSize = this.minScale + n1 * (this.maxScale - this.minScale);
-        system.particleRadii[particleIndex] = Math.max(this.minScale, Math.min(this.maxScale, particleSize));
+      // Apply particle radius scaling if enabled, now with smoothing
+      if (this.affectScale && system?.particleRadii?.[particleIndex] !== undefined) { // Check index exists
+        const n1 = this.noise2D(x, y, this.time, true); // Use noise value for target size
+
+        // Calculate target size based on noise, clamped between min/max
+        const targetSize = Math.max(this.minScale, Math.min(this.maxScale, this.minScale + n1 * (this.maxScale - this.minScale)));
+
+        // Get current size
+        const currentSize = system.particleRadii[particleIndex];
+
+        // Determine smoothing rate
+        const smoothingRate = (targetSize > currentSize) ? this.smoothingRateIn : this.smoothingRateOut;
+
+        // Calculate smoothed size using lerp (adjust multiplier 60 for frame-rate independence, might need tuning)
+        // Ensure smoothing rate is applied correctly based on dt
+        const lerpFactor = 1.0 - Math.pow(1.0 - smoothingRate, dt * 60.0); // Frame-rate independent lerp factor calculation
+        const smoothedSize = currentSize + (targetSize - currentSize) * lerpFactor;
+
+        // Update the particle radius with the smoothed value
+        system.particleRadii[particleIndex] = smoothedSize;
       }
     } catch (err) {
       console.error("Error in turbulenceField.applyTurbulence:", err);

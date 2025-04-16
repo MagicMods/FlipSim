@@ -514,18 +514,27 @@ export class ParticleSystem {
       this.picFlipRatio = simParams.simulation.picFlipRatio ?? this.picFlipRatio;
       this.restDensity = simParams.simulation.restDensity ?? this.restDensity;
 
-      // --- P-Size Handling ---
-      const oldRadius = this.particleRadius;
+      // --- P-Size Handling (Modified Logic) ---
+      const oldRadius = this.particleRadius; // Store old radius for comparison
       const newRadius = simParams.simulation.particleRadius ?? this.particleRadius;
-      if (newRadius !== oldRadius) {
+      let affectScaleActive = simParams.turbulence?.affectScale === true;
+
+      // Always update the base particleRadius property
+      if (newRadius !== this.particleRadius) {
         this.particleRadius = newRadius;
-        // Update the radii array for all particles
+      }
+
+      // Only fill the radii array if the base radius changed AND turbulence scaling is OFF
+      if (newRadius !== oldRadius && !affectScaleActive) {
         if (this.particleRadii && typeof this.particleRadii.fill === 'function') {
           this.particleRadii.fill(this.particleRadius);
-          if (this.debug.particles) console.log(`Updated particleRadii array with new radius: ${this.particleRadius}`);
+          if (this.debug.particles) console.log(`Updated particleRadii array with new base radius: ${this.particleRadius} (affectScale OFF)`);
         } else {
           console.warn("Could not update particleRadii array.");
         }
+      } else if (newRadius !== oldRadius && affectScaleActive) {
+        // Log that only base radius was updated because affectScale is ON
+        if (this.debug.particles) console.log(`Updated base particleRadius: ${this.particleRadius} (affectScale ON, array managed by turbulence)`);
       }
       // --- End P-Size ---
 
@@ -550,6 +559,15 @@ export class ParticleSystem {
 
     // Optional: Log for verification
     // if(this.debug.particles) console.log(`ParticleSystem updated params via event: timeStep=${this.timeStep}, damping=${this.velocityDamping}, ...`);
+  }
+
+  resetParticleRadii() {
+    if (this.particleRadii && typeof this.particleRadii.fill === 'function') {
+      this.particleRadii.fill(this.particleRadius);
+      if (this.debug.particles) console.log(`Particle radii reset to base: ${this.particleRadius}`);
+    } else {
+      console.warn("Could not reset particleRadii array.");
+    }
   }
 }
 

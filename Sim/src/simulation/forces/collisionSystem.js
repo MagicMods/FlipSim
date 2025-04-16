@@ -16,6 +16,7 @@ export class CollisionSystem {
     this.damping = damping;
     this.particleRestitution = particleRestitution;
     this.particleRadius = particleRadius;
+    this.maxParticleRadius = particleRadius;
 
     // INITIALIZE THIS - it was missing
     this.grid = [];
@@ -34,6 +35,12 @@ export class CollisionSystem {
 
   // Add handler for simParams updates
   handleParamsUpdate({ simParams }) {
+    // Update base radius first
+    if (simParams?.simulation?.particleRadius !== undefined) {
+      this.particleRadius = simParams.simulation.particleRadius;
+    }
+
+    // Update collision parameters
     if (simParams?.collision) {
       const previousGridSize = this.gridSize; // Store previous size for comparison
 
@@ -48,7 +55,16 @@ export class CollisionSystem {
         this.initializeGrid(); // Assuming this method exists to handle grid resizing
       }
     }
-    // console.log(`CollisionSystem updated: enabled=${this.enabled}, gridSize=${this.gridSize}, repulsion=${this.repulsion}, restitution=${this.particleRestitution}`);
+
+    // Update maxParticleRadius based on turbulence settings AFTER updating base radius
+    if (simParams?.turbulence?.affectScale === true) {
+      // If affectScale is true, use the maxScale from turbulence params, fallback to current base radius
+      this.maxParticleRadius = simParams.turbulence.maxScale ?? this.particleRadius;
+    } else {
+      // If affectScale is false or turbulence params are missing, max radius is just the base radius
+      this.maxParticleRadius = this.particleRadius;
+    }
+    // console.log(`CollisionSystem updated: enabled=${this.enabled}, gridSize=${this.gridSize}, baseRadius=${this.particleRadius}, maxRadius=${this.maxParticleRadius}`);
   }
 
   // Add initializeGrid method if it doesn't exist (or update existing one)
@@ -103,15 +119,28 @@ export class CollisionSystem {
     }
   }
 
+  // --- Add helper method to calculate search radius --- 
+  calculateSearchRadius() {
+    if (!this.cellSize || this.cellSize <= 0) return 1; // Safety check
+    // Ensure maxParticleRadius has a fallback
+    const maxRadius = this.maxParticleRadius || this.particleRadius || 0.01;
+    // Calculate search radius in cells, minimum 1
+    return Math.max(1, Math.ceil(maxRadius / this.cellSize));
+  }
+  // --- End helper method ---
+
   checkCellCollisions(cellIndex, particles, velocitiesX, velocitiesY) {
     const cell = this.grid[cellIndex];
+    if (!cell) return; // Add safety check for empty/invalid cell
+
     const x = cellIndex % this.gridSize;
     const y = Math.floor(cellIndex / this.gridSize);
+    const searchRadius = this.calculateSearchRadius(); // Calculate dynamic search radius
 
     for (let i = 0; i < cell.length; i++) {
       const particleI = cell[i];
 
-      // Same cell
+      // Same cell collision check (inner loop)
       for (let j = i + 1; j < cell.length; j++) {
         this.resolveCollision(
           particleI,
@@ -122,31 +151,32 @@ export class CollisionSystem {
         );
       }
 
-      // Check neighboring cells
-      this.checkNeighborCell(
-        x + 1,
-        y,
-        particleI,
-        particles,
-        velocitiesX,
-        velocitiesY
-      );
-      this.checkNeighborCell(
-        x,
-        y + 1,
-        particleI,
-        particles,
-        velocitiesX,
-        velocitiesY
-      );
-      this.checkNeighborCell(
-        x + 1,
-        y + 1,
-        particleI,
-        particles,
-        velocitiesX,
-        velocitiesY
-      );
+      // Check neighboring cells using nested loops and searchRadius
+      for (let offsetY = -searchRadius; offsetY <= searchRadius; offsetY++) {
+        for (let offsetX = -searchRadius; offsetX <= searchRadius; offsetX++) {
+          // Skip checking the cell against itself OR checking previously checked pairs (e.g., only check positive offsets relative to current)
+          // Simplification: Only check offsets where interaction hasn't been checked by the 'other' cell
+          // This avoids double checks. We check x+1,y; x,y+1; x+1,y+1; x-1,y+1; x+1, y-1 (relative positive offsets)
+          // A more robust way is needed, but let's keep it simple first
+          // For now, we'll check all neighbors in the square and rely on resolveCollision check
+          if (offsetX === 0 && offsetY === 0) continue; // Skip self
+
+          const neighborX = x + offsetX;
+          const neighborY = y + offsetY;
+
+          // Check bounds before calling checkNeighborCell
+          if (neighborX >= 0 && neighborX < this.gridSize && neighborY >= 0 && neighborY < this.gridSize) {
+            this.checkNeighborCell(
+              neighborX,
+              neighborY,
+              particleI,
+              particles,
+              velocitiesX,
+              velocitiesY
+            );
+          }
+        }
+      }
     }
   }
 
@@ -174,15 +204,9 @@ export class CollisionSystem {
     const dy = particles[j * 2 + 1] - particles[i * 2 + 1];
     const distSq = dx * dx + dy * dy;
 
-    // Fix missing reference - use a default radius if particleSystem is undefined
-    let radiusI = this.particleRadius;
-    let radiusJ = this.particleRadius;
-
-    // Only try to access particleRadii if the reference exists
-    if (this.particleSystem && this.particleSystem.particleRadii) {
-      radiusI = this.particleSystem.particleRadii[i];
-      radiusJ = this.particleSystem.particleRadii[j];
-    }
+    // Replace existing radius logic with direct access to particleRadii array
+    let radiusI = (this.particleSystem?.particleRadii?.[i]) ?? this.particleRadius;
+    let radiusJ = (this.particleSystem?.particleRadii?.[j]) ?? this.particleRadius;
 
     // Access rest density from particleSystem reference
     let densityFactor = 1.0;
