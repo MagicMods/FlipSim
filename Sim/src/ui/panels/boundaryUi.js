@@ -49,7 +49,7 @@ export class BoundaryUi extends BaseUi {
 
 
     this.boundaryFrictionController = this.gui
-      .add(this.main.simParams.boundary, "damping", 0.0, 1.0, 0.01)
+      .add(this.main.simParams.boundary, "damping", 0.0, 4.0, 0.01)
       .name("B-Friction")
       .onChange((value) => {
         eventBus.emit('uiControlChanged', { paramPath: 'boundary.damping', value });

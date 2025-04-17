@@ -576,20 +576,20 @@ export class PulseModulationUi extends BaseUi {
       .add(modulator, "min", 0, 1)
       .name("Min Value")
       .onChange((value) => {
-        if (value > modulator.max) {
-          modulator.min = modulator.max;
-          minController.updateDisplay();
-        }
+        // if (value > modulator.max) {
+        //   modulator.min = modulator.max;
+        //   minController.updateDisplay();
+        // }
       });
 
     const maxController = folder
       .add(modulator, "max", 0, 1)
       .name("Max Value")
       .onChange((value) => {
-        if (value < modulator.min) {
-          modulator.max = modulator.min;
-          maxController.updateDisplay();
-        }
+        // if (value < modulator.min) {
+        //   modulator.max = modulator.min;
+        //   maxController.updateDisplay();
+        // }
       });
 
     // Create Remove button to delete the modulator
