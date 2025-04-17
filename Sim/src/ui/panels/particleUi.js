@@ -21,7 +21,7 @@ export class ParticleUi extends BaseUi {
       .onChange((value) => { eventBus.emit('uiControlChanged', { paramPath: 'simulation.particleCount', value }); });
 
     this.particleSizeController = this.gui
-      .add(this.main.simParams.simulation, "particleRadius", 0.002, 0.03, 0.001).name("P-Size")
+      .add(this.main.simParams.simulation, "particleRadius", 0.002, 0.1, 0.001).name("P-Size")
       .onChange((value) => { eventBus.emit('uiControlChanged', { paramPath: 'simulation.particleRadius', value }); });
 
     this.velocityDampingController = this.gui.add(this.main.simParams.simulation, "velocityDamping", 0.8, 1, 0.01)

@@ -25,6 +25,7 @@ export class CollisionSystem {
     }
 
     this.particleSystem = null;
+    this.processedPairs = new Set();
 
     // Assuming initializeGrid exists and needs to be called
     this.initializeGrid(); // Call initial grid setup
@@ -114,6 +115,8 @@ export class CollisionSystem {
   }
 
   resolveCollisions(particles, velocitiesX, velocitiesY) {
+    this.processedPairs.clear();
+
     for (let cellIndex = 0; cellIndex < this.grid.length; cellIndex++) {
       this.checkCellCollisions(cellIndex, particles, velocitiesX, velocitiesY);
     }
@@ -125,7 +128,9 @@ export class CollisionSystem {
     // Ensure maxParticleRadius has a fallback
     const maxRadius = this.maxParticleRadius || this.particleRadius || 0.01;
     // Calculate search radius in cells, minimum 1
-    return Math.max(1, Math.ceil(maxRadius / this.cellSize));
+    // return Math.max(1, Math.ceil(maxRadius / this.cellSize));
+    // Calculate search radius based on max interaction distance (2 * maxRadius), minimum 1
+    return Math.max(1, Math.ceil((2 * maxRadius) / this.cellSize));
   }
   // --- End helper method ---
 
@@ -200,6 +205,14 @@ export class CollisionSystem {
   }
 
   resolveCollision(i, j, particles, velocitiesX, velocitiesY) {
+    // --- Prevent duplicate checks per frame ---
+    const pairKey = Math.min(i, j) + '-' + Math.max(i, j);
+    if (this.processedPairs.has(pairKey)) {
+      return; // Already processed this pair in this frame
+    }
+    this.processedPairs.add(pairKey);
+    // --- End duplicate check ---
+
     const dx = particles[j * 2] - particles[i * 2];
     const dy = particles[j * 2 + 1] - particles[i * 2 + 1];
     const distSq = dx * dx + dy * dy;
